@@ -61,14 +61,14 @@ fn main() {
         println!();
         println!("{}", monkey(&line, &output_mode));
         println!();
-      }
+      },
       Err(ReadlineError::Interrupted) | Err(ReadlineError::Eof) => {
         break;
-      }
+      },
       Err(err) => {
         println!("Error reading input: {:?}", err);
         break;
-      }
+      },
     }
   }
 }
