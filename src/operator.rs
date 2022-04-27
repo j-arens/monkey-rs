@@ -18,7 +18,7 @@ pub enum Operator {
   Subtract,
 }
 
-impl fmt::Debug for Operator {
+impl fmt::Display for Operator {
   fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
     f.write_str(match self {
       Operator::Add => "+",
@@ -36,7 +36,7 @@ impl fmt::Debug for Operator {
 
 // Maps `Token` to an `Operator`.
 impl TryFrom<&Token> for Operator {
-  type Error = String;
+  type Error = OperatorError;
 
   fn try_from(token: &Token) -> Result<Self, Self::Error> {
     match token {
@@ -49,7 +49,7 @@ impl TryFrom<&Token> for Operator {
       Token::LessThan => Ok(Operator::LessThan),
       Token::GreaterThan => Ok(Operator::GreaterThan),
       Token::Bang => Ok(Operator::Bang),
-      _ => Err(format!("Cannot convert {:?} into an `Operator`.", token)),
+      _ => Err(OperatorError::InvalidConversion(token.clone())),
     }
   }
 }
@@ -98,5 +98,22 @@ impl PartialOrd for OperatorPrecedence {
     }
 
     Some(cmp::Ordering::Equal)
+  }
+}
+
+// -- Errors ------------------------------------------------------------------
+
+#[derive(Debug)]
+pub enum OperatorError {
+  InvalidConversion(Token),
+}
+
+impl fmt::Display for OperatorError {
+  fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+    match self {
+      OperatorError::InvalidConversion(token) => {
+        write!(f, "cannot convert `{:?}` into an operator", token)
+      },
+    }
   }
 }

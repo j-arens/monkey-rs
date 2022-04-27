@@ -1,4 +1,5 @@
 use std::convert::TryFrom;
+use std::fmt;
 use std::iter::Peekable;
 use std::str;
 use std::vec::IntoIter;
@@ -25,7 +26,7 @@ use crate::ast::{
   StringLiteral,
 };
 use crate::lexer::Token;
-use crate::operator::{Operator, OperatorPrecedence};
+use crate::operator::{Operator, OperatorError, OperatorPrecedence};
 
 /// The result of parsing. Contains the abstract syntax tree and any errors
 /// occured during parsing.
@@ -76,7 +77,6 @@ impl Parser {
   }
 }
 
-type ParseError = String;
 type ParseResult<T> = Result<T, ParseError>;
 
 // -- Generic Node Parsing ------------------------------------------------
@@ -110,12 +110,8 @@ impl Expression {
       Some(Token::String { .. }) => Ok(StringLiteral::parse(tokens)?.into()),
       Some(Token::LeftBracket) => Ok(ArrayLiteral::parse(tokens)?.into()),
       Some(Token::LeftBrace) => Ok(HashLiteral::parse(tokens)?.into()),
-      peeked_token => {
-        Err(format!(
-          "Unexpected token `{:?}` at beginning of expression.",
-          peeked_token
-        ))
-      },
+      Some(peeked_token) => Err(ParseError::UnknownExpression(peeked_token.clone())),
+      None => Err(ParseError::EmptyExpression),
     }
   }
 
@@ -158,11 +154,7 @@ impl Expression {
             let call_expr = CallExpression::parse(tokens, ident_expr)?;
             Expression::parse_right(tokens, call_expr.into(), op_precedence)
           },
-          _ => {
-            Err(String::from(
-              "Expected function call to be preceded by function name.",
-            ))
-          },
+          _ => Err(ParseError::InvalidInvocation),
         }
       },
       Token::LeftBracket => {
@@ -174,17 +166,15 @@ impl Expression {
   }
 
   fn parse_group(tokens: &mut TokenIter) -> ParseResult<Self> {
-    tokens.next_if_eq(&Token::LeftParen).ok_or(format!(
-      "Expected grouped expression to begin with `{:?}`",
-      Token::LeftParen
-    ))?;
+    tokens
+      .next_if_eq(&Token::LeftParen)
+      .ok_or(ParseError::InvalidGroupedExpressionOpening)?;
 
     let expr = Expression::parse(tokens, OperatorPrecedence::Base)?;
 
-    tokens.next_if_eq(&Token::RightParen).ok_or(format!(
-      "Expected grouped expression to end with `{:?}`",
-      Token::RightParen
-    ))?;
+    tokens
+      .next_if_eq(&Token::RightParen)
+      .ok_or(ParseError::InvalidGroupedExpressionClosing)?;
 
     Ok(expr)
   }
@@ -220,12 +210,8 @@ impl BooleanExpression {
     match tokens.next() {
       Some(Token::False) => Ok(Self { value: false }),
       Some(Token::True) => Ok(Self { value: true }),
-      token => {
-        Err(format!(
-          "Could not create boolean from token `{:?}`.",
-          token,
-        ))
-      },
+      Some(other_token) => Err(ParseError::InvalidBooleanExpression(other_token)),
+      None => Err(ParseError::UnexpectedEndOfTokens),
     }
   }
 }
@@ -234,10 +220,9 @@ impl BooleanExpression {
 
 impl CallExpression {
   fn parse(tokens: &mut TokenIter, ident: IdentExpression) -> ParseResult<Self> {
-    tokens.next_if_eq(&Token::LeftParen).ok_or(format!(
-      "Expected call expression to begin with {:?}",
-      Token::LeftParen
-    ))?;
+    tokens
+      .next_if_eq(&Token::LeftParen)
+      .ok_or(ParseError::InvalidCallExpressionOpening)?;
 
     let arguments = Expression::parse_list(tokens, Token::RightParen)?;
 
@@ -260,14 +245,10 @@ impl IdentExpression {
           });
         }
 
-        return Err(format!("Failed to parse `{:?}` into a string", bytes));
+        Err(ParseError::ParseIdentFailure(bytes))
       },
-      token => {
-        Err(format!(
-          "Could not create identifier from token `{:?}`.",
-          token
-        ))
-      },
+      Some(other_token) => Err(ParseError::InvalidIdent(other_token)),
+      None => Err(ParseError::UnexpectedEndOfTokens),
     }
   }
 }
@@ -276,22 +257,19 @@ impl IdentExpression {
 
 impl IfExpression {
   fn parse(tokens: &mut TokenIter) -> ParseResult<Self> {
-    tokens.next_if_eq(&Token::If).ok_or(format!(
-      "Expected if expression to begin with the `{:?}` keyword.",
-      Token::If
-    ))?;
+    tokens
+      .next_if_eq(&Token::If)
+      .ok_or(ParseError::InvalidIfExpressionOpening)?;
 
-    tokens.next_if_eq(&Token::LeftParen).ok_or(format!(
-      "Expected `if` condition to begin with `{:?}`.",
-      Token::LeftParen
-    ))?;
+    tokens
+      .next_if_eq(&Token::LeftParen)
+      .ok_or(ParseError::InvalidIfConditionOpening)?;
 
     let condition = Expression::parse(tokens, OperatorPrecedence::Base)?;
 
-    tokens.next_if_eq(&Token::RightParen).ok_or(format!(
-      "Expected `if` condition to end with `{:?}`.",
-      Token::RightParen
-    ))?;
+    tokens
+      .next_if_eq(&Token::RightParen)
+      .ok_or(ParseError::InvalidIfConditionClosing)?;
 
     let consequence = BlockStatement::parse(tokens)?;
 
@@ -322,13 +300,12 @@ impl IfExpression {
 
 impl IndexExpression {
   fn parse(tokens: &mut TokenIter, left_expr: Expression) -> ParseResult<Self> {
-    tokens.next_if_eq(&Token::LeftBracket).ok_or(format!(
-      "Expected index expression to being with `{:?}`.",
-      Token::LeftBracket
-    ))?;
+    tokens
+      .next_if_eq(&Token::LeftBracket)
+      .ok_or(ParseError::InvalidIndexExpressionOpening)?;
 
     if matches!(tokens.peek(), Some(&Token::RightBracket)) {
-      return Err(String::from("Cannot parse empty index."));
+      return Err(ParseError::EmptyIndexExpression);
     }
 
     let index_expr = IndexExpression {
@@ -336,10 +313,9 @@ impl IndexExpression {
       operand: Box::new(left_expr),
     };
 
-    tokens.next_if_eq(&Token::RightBracket).ok_or(format!(
-      "Expected index expression to end with `{:?}`.",
-      Token::RightBracket
-    ))?;
+    tokens
+      .next_if_eq(&Token::RightBracket)
+      .ok_or(ParseError::InvalidIndexExpressionClosing)?;
 
     Ok(index_expr)
   }
@@ -352,9 +328,7 @@ impl InfixExpression {
     let op_token = tokens.next();
 
     if op_token.is_none() {
-      return Err(String::from(
-        "Unexpected end of input while parsing infix expression.",
-      ));
+      return Err(ParseError::UnexpectedEndOfTokens);
     }
 
     let op_token = op_token.unwrap();
@@ -377,9 +351,7 @@ impl PrefixExpression {
     let op_token = tokens.next();
 
     if op_token.is_none() {
-      return Err(String::from(
-        "Unexpected end of input while parsing prefix expression.",
-      ));
+      return Err(ParseError::UnexpectedEndOfTokens);
     }
 
     let op_token = op_token.unwrap();
@@ -399,10 +371,9 @@ impl PrefixExpression {
 
 impl ArrayLiteral {
   fn parse(tokens: &mut TokenIter) -> ParseResult<Self> {
-    tokens.next_if_eq(&Token::LeftBracket).ok_or(format!(
-      "Expected array literal to begin with `{:?}`.",
-      Token::LeftBracket
-    ))?;
+    tokens
+      .next_if_eq(&Token::LeftBracket)
+      .ok_or(ParseError::InvalidArrayLiteralOpening)?;
 
     let elements = Expression::parse_list(tokens, Token::RightBracket)?;
 
@@ -414,16 +385,13 @@ impl ArrayLiteral {
 
 impl FunctionLiteral {
   fn parse(tokens: &mut TokenIter) -> ParseResult<Self> {
-    tokens.next_if_eq(&Token::Function).ok_or(format!(
-      "Expected function literal to begin with `{:?}` keyword.",
-      Token::Function
-    ))?;
+    tokens
+      .next_if_eq(&Token::Function)
+      .ok_or(ParseError::InvalidFunctionLiteralOpening)?;
 
-    tokens.next_if_eq(&Token::LeftParen).ok_or(format!(
-      "Expected `{:?}` keyword to be proceeded by `{:?}`.",
-      Token::Function,
-      Token::LeftParen
-    ))?;
+    tokens
+      .next_if_eq(&Token::LeftParen)
+      .ok_or(ParseError::InvalidFunctionLiteralParamsOpening)?;
 
     let mut parameters = Vec::new();
 
@@ -438,11 +406,11 @@ impl FunctionLiteral {
           continue;
         },
         Some(Token::Ident { .. }) => parameters.push(IdentExpression::parse(tokens)?),
-        token => {
-          return Err(format!(
-            "Unexpected token `{:?}` in function parameters.",
-            token
-          ))
+        Some(other_token) => {
+          return Err(ParseError::InvalidFunctionParam(other_token.clone()));
+        },
+        None => {
+          return Err(ParseError::UnexpectedEndOfTokens);
         },
       }
     }
@@ -457,10 +425,9 @@ impl FunctionLiteral {
 
 impl HashLiteral {
   fn parse(tokens: &mut TokenIter) -> ParseResult<Self> {
-    tokens.next_if_eq(&Token::LeftBrace).ok_or(format!(
-      "Expected hash literal to begin with `{:?}`.",
-      Token::LeftBracket
-    ))?;
+    tokens
+      .next_if_eq(&Token::LeftBrace)
+      .ok_or(ParseError::InvalidHashLiteralOpening)?;
 
     let mut pairs = Vec::new();
 
@@ -486,10 +453,9 @@ impl HashLiteral {
   fn parse_pair(tokens: &mut TokenIter) -> Result<(Expression, Expression), ParseError> {
     let key = Expression::parse(tokens, OperatorPrecedence::Base)?;
 
-    tokens.next_if_eq(&Token::Colon).ok_or(format!(
-      "Expected hash key and value to be seperated by `{:?}`.",
-      Token::Colon
-    ))?;
+    tokens
+      .next_if_eq(&Token::Colon)
+      .ok_or(ParseError::InvalidHashLiteralDelimiter)?;
 
     let value = Expression::parse(tokens, OperatorPrecedence::Base)?;
 
@@ -511,9 +477,10 @@ impl NumberLiteral {
           }
         }
 
-        return Err(format!("Failed to parse `{:?}` into a number", bytes));
+        Err(ParseError::ParseNumberFailure(bytes))
       },
-      token => Err(format!("Could not create number from token `{:?}`.", token)),
+      Some(other_token) => Err(ParseError::InvalidNumber(other_token)),
+      None => Err(ParseError::UnexpectedEndOfTokens),
     }
   }
 }
@@ -530,9 +497,10 @@ impl StringLiteral {
           });
         }
 
-        return Err(format!("Failed to parse `{:?}` into a string.", bytes));
+        Err(ParseError::ParseStringFailure(bytes))
       },
-      token => Err(format!("Could not create string from token `{:?}`.", token)),
+      Some(other_token) => Err(ParseError::InvalidString(other_token)),
+      None => Err(ParseError::UnexpectedEndOfTokens),
     }
   }
 }
@@ -553,10 +521,9 @@ impl Statement {
 
 impl BlockStatement {
   fn parse(tokens: &mut TokenIter) -> ParseResult<Self> {
-    tokens.next_if_eq(&Token::LeftBrace).ok_or(format!(
-      "Expected block expression to begin with `{:?}`.",
-      Token::LeftBrace
-    ))?;
+    tokens
+      .next_if_eq(&Token::LeftBrace)
+      .ok_or(ParseError::InvalidBlockStatementOpening)?;
 
     let mut statements = Vec::new();
 
@@ -596,18 +563,15 @@ impl ExpressionStatement {
 
 impl LetStatement {
   fn parse(tokens: &mut TokenIter) -> ParseResult<Self> {
-    tokens.next_if_eq(&Token::Let).ok_or(format!(
-      "Expected variable assignment to begin with `{:?}` keyword.",
-      Token::Let
-    ))?;
+    tokens
+      .next_if_eq(&Token::Let)
+      .ok_or(ParseError::InvalidLetStatementOpening)?;
 
     let ident = IdentExpression::parse(tokens)?;
 
-    tokens.next_if_eq(&Token::Assign).ok_or(format!(
-      "Expected `{:?}` operator after `{:?}` keyword.",
-      Token::Assign,
-      Token::Let
-    ))?;
+    tokens
+      .next_if_eq(&Token::Assign)
+      .ok_or(ParseError::InvalidLetStatementAssignment)?;
 
     let expr = Expression::parse(tokens, OperatorPrecedence::Base)?;
 
@@ -625,10 +589,9 @@ impl LetStatement {
 
 impl ReturnStatement {
   fn parse(tokens: &mut TokenIter) -> ParseResult<Self> {
-    tokens.next_if_eq(&Token::Return).ok_or(format!(
-      "Expected return statement to begin with `{:?}` keyword.",
-      Token::Return
-    ))?;
+    tokens
+      .next_if_eq(&Token::Return)
+      .ok_or(ParseError::InvalidReturnStatementOpening)?;
 
     let expr = Expression::parse(tokens, OperatorPrecedence::Base)?;
 
@@ -636,6 +599,217 @@ impl ReturnStatement {
     tokens.next_if_eq(&Token::Semicolon);
 
     Ok(Self { expression: expr })
+  }
+}
+
+// -- Errors ------------------------------------------------------------------
+
+#[derive(Debug)]
+pub enum ParseError {
+  EmptyExpression,
+  EmptyIndexExpression,
+  InvalidArrayLiteralOpening,
+  InvalidBlockStatementOpening,
+  InvalidBooleanExpression(Token),
+  InvalidCallExpressionOpening,
+  InvalidFunctionLiteralOpening,
+  InvalidFunctionLiteralParamsOpening,
+  InvalidFunctionParam(Token),
+  InvalidGroupedExpressionClosing,
+  InvalidGroupedExpressionOpening,
+  InvalidHashLiteralDelimiter,
+  InvalidHashLiteralOpening,
+  InvalidIdent(Token),
+  InvalidIfConditionClosing,
+  InvalidIfConditionOpening,
+  InvalidIfExpressionOpening,
+  InvalidIndexExpressionClosing,
+  InvalidIndexExpressionOpening,
+  InvalidInvocation,
+  InvalidLetStatementAssignment,
+  InvalidLetStatementOpening,
+  InvalidNumber(Token),
+  InvalidReturnStatementOpening,
+  InvalidString(Token),
+  OperatorError(OperatorError),
+  ParseIdentFailure(Vec<u8>),
+  ParseNumberFailure(Vec<u8>),
+  ParseStringFailure(Vec<u8>),
+  UnexpectedEndOfTokens,
+  UnknownExpression(Token),
+}
+
+impl fmt::Display for ParseError {
+  fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+    match self {
+      ParseError::EmptyExpression => {
+        write!(f, "cannot parse empty expression")
+      },
+      ParseError::EmptyIndexExpression => {
+        write!(
+          f,
+          "expected index operation to contain an integer, but found nothing"
+        )
+      },
+      ParseError::InvalidArrayLiteralOpening => {
+        write!(
+          f,
+          "expected array literal to begin with {:?}",
+          Token::LeftBracket
+        )
+      },
+      ParseError::InvalidBlockStatementOpening => {
+        write!(
+          f,
+          "expected block statement to begin with {:?}",
+          Token::LeftBrace
+        )
+      },
+      ParseError::InvalidBooleanExpression(token) => {
+        write!(f, "could not coerce {:?} into a boolean", token)
+      },
+      ParseError::InvalidCallExpressionOpening => {
+        write!(
+          f,
+          "expected call expression to begin with {:?}",
+          Token::LeftParen
+        )
+      },
+      ParseError::InvalidFunctionLiteralOpening => {
+        write!(
+          f,
+          "expected function literal to begin with {:?}",
+          Token::Function
+        )
+      },
+      ParseError::InvalidFunctionLiteralParamsOpening => {
+        write!(
+          f,
+          "expected function literl parameters list to begin with {:?}",
+          Token::LeftParen
+        )
+      },
+      ParseError::InvalidFunctionParam(token) => {
+        write!(f, "unexpected token `{:?}` in function parameters", token)
+      },
+      ParseError::InvalidGroupedExpressionClosing => {
+        write!(
+          f,
+          "expected grouped expression to end with {:?}",
+          Token::RightParen
+        )
+      },
+      ParseError::InvalidGroupedExpressionOpening => {
+        write!(
+          f,
+          "expected grouped expression to begin with {:?}",
+          Token::LeftParen
+        )
+      },
+      ParseError::InvalidHashLiteralDelimiter => {
+        write!(
+          f,
+          "expected hash literal keys and values to be delimited by {:?}",
+          Token::Colon
+        )
+      },
+      ParseError::InvalidHashLiteralOpening => {
+        write!(f, "expected hash literal to begin {:?}", Token::LeftBracket)
+      },
+      ParseError::InvalidIdent(token) => {
+        write!(f, "invalid ident {:?}", token)
+      },
+      ParseError::InvalidIfConditionClosing => {
+        write!(
+          f,
+          "expected if condition to end with {:?}",
+          Token::RightParen
+        )
+      },
+      ParseError::InvalidIfConditionOpening => {
+        write!(
+          f,
+          "expected if condition to begin with {:?}",
+          Token::LeftParen
+        )
+      },
+      ParseError::InvalidIfExpressionOpening => {
+        write!(f, "expected if expression to begin with `{:?}`", Token::If)
+      },
+      ParseError::InvalidIndexExpressionClosing => {
+        write!(
+          f,
+          "expected index expression to end with `{:?}`",
+          Token::RightBracket
+        )
+      },
+      ParseError::InvalidIndexExpressionOpening => {
+        write!(
+          f,
+          "expected index expression to begin with `{:?}`",
+          Token::LeftBracket
+        )
+      },
+      ParseError::InvalidInvocation => {
+        write!(f, "expected function call to be preceded by function name")
+      },
+      ParseError::InvalidLetStatementAssignment => {
+        write!(
+          f,
+          "expected `{:?}` after `{:?}` keyword",
+          Token::Assign,
+          Token::Let
+        )
+      },
+      ParseError::InvalidLetStatementOpening => {
+        write!(
+          f,
+          "expected let statement to begin with `{:?}` keyword",
+          Token::Let
+        )
+      },
+      ParseError::InvalidNumber(token) => {
+        write!(f, "invalid number `{:?}`", token)
+      },
+      ParseError::InvalidReturnStatementOpening => {
+        write!(
+          f,
+          "expected return state to begin with `{:?}` keyword",
+          Token::Return
+        )
+      },
+      ParseError::InvalidString(token) => {
+        write!(f, "invalid string `{:?}`", token)
+      },
+      ParseError::OperatorError(op_err) => {
+        write!(f, "{}", op_err)
+      },
+      ParseError::ParseIdentFailure(bytes) => {
+        write!(f, "failed to parse identifier `{:?}`", bytes)
+      },
+      ParseError::ParseNumberFailure(bytes) => {
+        write!(f, "failed to parse number `{:?}`", bytes)
+      },
+      ParseError::ParseStringFailure(bytes) => {
+        write!(f, "failed to parse string `{:?}`", bytes)
+      },
+      ParseError::UnexpectedEndOfTokens => {
+        write!(f, "unexpectedly reached end of tokens while parsing")
+      },
+      ParseError::UnknownExpression(token) => {
+        write!(
+          f,
+          "unexpected token `{:?}` at beginning of expression",
+          token
+        )
+      },
+    }
+  }
+}
+
+impl From<OperatorError> for ParseError {
+  fn from(op_err: OperatorError) -> Self {
+    ParseError::OperatorError(op_err)
   }
 }
 

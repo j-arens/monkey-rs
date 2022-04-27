@@ -1,5 +1,6 @@
 use std::collections::HashMap;
 use std::convert::TryFrom;
+use std::fmt;
 use std::rc::Rc;
 
 use crate::ast::{
@@ -24,7 +25,7 @@ use crate::ast::{
   Statement,
   StringLiteral,
 };
-use crate::built_in::BUILT_IN_FUNCTIONS;
+use crate::built_in::{BuiltInError, BUILT_IN_FUNCTIONS};
 use crate::object::{
   MonkeyArray,
   MonkeyBool,
@@ -36,11 +37,11 @@ use crate::object::{
   MonkeyReturn,
   MonkeyString,
   Object,
+  ObjectError,
 };
 use crate::operator::Operator;
 use crate::scope::{Scope, ShareableScope};
 
-type EvalError = String;
 pub type EvalResult = Result<Object, EvalError>;
 
 /// Traverses and evaluates each node in the given Monkey AST to produce
@@ -114,7 +115,7 @@ impl CallExpression {
       Object::BuiltIn(built_in) => {
         let arguments = CallExpression::eval_arguments(self.arguments, scope)?;
 
-        (built_in.value.function)(arguments)
+        (built_in.value.function)(arguments).map_err(EvalError::from)
       },
       Object::Function(func) => {
         let MonkeyFunction {
@@ -134,12 +135,7 @@ impl CallExpression {
 
         body.eval(&fn_scope)
       },
-      other_obj => {
-        Err(format!(
-          "Expected object to be a `Object::Function`, but object is a {:?}",
-          other_obj
-        ))
-      },
+      other_obj => Err(EvalError::ObjectNotCallable(other_obj)),
     }
   }
 
@@ -161,10 +157,10 @@ impl CallExpression {
 
 impl IdentExpression {
   fn eval(self, scope: &ShareableScope) -> EvalResult {
-    scope.borrow().get_binding(&self.value).ok_or(format!(
-      "Expected indentifier {:?} to be in scope",
-      self.value
-    ))
+    scope
+      .borrow()
+      .get_binding(&self.value)
+      .ok_or(EvalError::UnknownIdent(self.value))
   }
 }
 
@@ -195,12 +191,7 @@ impl IndexExpression {
               _ => Ok(Object::Null(MonkeyNull)),
             }
           },
-          other_obj => {
-            Err(format!(
-              "`{:?}` cannot be used as an `array` index, use an `integer` instead.",
-              other_obj
-            ))
-          }
+          other_obj => Err(EvalError::InvalidArrayIndex(other_obj)),
         }
       },
       Object::Hash(MonkeyHash { map }) => {
@@ -211,12 +202,7 @@ impl IndexExpression {
           _ => Ok(Object::Null(MonkeyNull)),
         }
       },
-      other_obj => {
-        Err(format!(
-          "Expected index operator to be used on an `array` or `hash`, but was used on a `{:?}` instead.",
-          other_obj
-        ))
-      },
+      other_obj => Err(EvalError::ObjectNotIndexable(other_obj)),
     }
   }
 }
@@ -229,9 +215,9 @@ impl InfixExpression {
     let right_obj = self.right_operand.eval(scope)?;
 
     match self.operator {
-      Operator::Add => left_obj + right_obj,
-      Operator::Bang => Err(String::from("Cannot use `!` as an infix operator")),
-      Operator::Divide => left_obj / right_obj,
+      Operator::Add => (left_obj + right_obj).map_err(EvalError::from),
+      Operator::Bang => Err(EvalError::InvalidInfixBang),
+      Operator::Divide => (left_obj / right_obj).map_err(EvalError::from),
       Operator::Equal => {
         Ok(Object::Bool(MonkeyBool {
           value: left_obj == right_obj,
@@ -247,13 +233,13 @@ impl InfixExpression {
           value: left_obj < right_obj,
         }))
       },
-      Operator::Multiply => left_obj * right_obj,
+      Operator::Multiply => (left_obj * right_obj).map_err(EvalError::from),
       Operator::NotEqual => {
         Ok(Object::Bool(MonkeyBool {
           value: left_obj != right_obj,
         }))
       },
-      Operator::Subtract => left_obj - right_obj,
+      Operator::Subtract => (left_obj - right_obj).map_err(EvalError::from),
     }
   }
 }
@@ -275,20 +261,10 @@ impl PrefixExpression {
           Object::Integer(MonkeyInteger { value }) => {
             Ok(Object::Integer(MonkeyInteger { value: -value }))
           },
-          obj => {
-            Err(format!(
-              "Expected `-` operator to be used on an integer, but was used on a `{:?}` instead",
-              obj
-            ))
-          },
+          obj => Err(EvalError::ObjectNotNegateable(obj)),
         }
       },
-      _ => {
-        Err(format!(
-          "Cannot use `{:?}` as a prefix operator",
-          self.operator
-        ))
-      },
+      _ => Err(EvalError::InvalidPrefixOperator(self.operator)),
     }
   }
 }
@@ -413,7 +389,7 @@ impl LetStatement {
 
     scope
       .borrow_mut()
-      .set_binding(self.identifier.value, obj.clone()); // @TODO
+      .set_binding(self.identifier.value, obj.clone());
 
     Ok(obj)
   }
@@ -426,6 +402,70 @@ impl ReturnStatement {
     Ok(Object::Return(MonkeyReturn {
       value: Box::new(self.expression.eval(scope)?),
     }))
+  }
+}
+
+// -- Errors ------------------------------------------------------------------
+
+pub enum EvalError {
+  BuiltInError(BuiltInError),
+  InvalidArrayIndex(Object),
+  InvalidInfixBang,
+  InvalidPrefixOperator(Operator),
+  ObjectError(ObjectError),
+  ObjectNotCallable(Object),
+  ObjectNotIndexable(Object),
+  ObjectNotNegateable(Object),
+  UnknownIdent(String),
+}
+
+impl From<ObjectError> for EvalError {
+  fn from(obj_err: ObjectError) -> Self {
+    EvalError::ObjectError(obj_err)
+  }
+}
+
+impl From<BuiltInError> for EvalError {
+  fn from(built_in_err: BuiltInError) -> Self {
+    EvalError::BuiltInError(built_in_err)
+  }
+}
+
+impl fmt::Display for EvalError {
+  fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+    match self {
+      EvalError::BuiltInError(err) => {
+        write!(f, "{}", err)
+      },
+      EvalError::InvalidArrayIndex(obj) => {
+        write!(
+          f,
+          "`{:?}` cannot be used as an array index, use an integer instead",
+          obj
+        )
+      },
+      EvalError::InvalidInfixBang => {
+        write!(f, "cannot use `!` as an infix operator")
+      },
+      EvalError::InvalidPrefixOperator(operator) => {
+        write!(f, "cannot use `{}` as a prefix operator", operator)
+      },
+      EvalError::ObjectError(err) => {
+        write!(f, "{}", err)
+      },
+      EvalError::ObjectNotCallable(obj) => {
+        write!(f, "`{:?}` is not callable, expected a function", obj)
+      },
+      EvalError::ObjectNotIndexable(obj) => {
+        write!(f, "`{:?}` is not indexable, expected an array or hash", obj)
+      },
+      EvalError::ObjectNotNegateable(obj) => {
+        write!(f, "`{:?}` is not negateable, expected an integer", obj)
+      },
+      EvalError::UnknownIdent(ident) => {
+        write!(f, "unknown identifier `{:?}`", ident)
+      },
+    }
   }
 }
 

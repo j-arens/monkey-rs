@@ -36,7 +36,7 @@ impl Object {
 
 // Implements + operator overload for Monkey objects in Rust.
 impl Add for Object {
-  type Output = Result<Self, String>;
+  type Output = Result<Self, ObjectError>;
 
   fn add(self, other: Self) -> Self::Output {
     match (&self, &other) {
@@ -52,19 +52,14 @@ impl Add for Object {
 
         Ok(Object::String(MonkeyString { value: new_string }))
       },
-      _ => {
-        Err(format!(
-          "Cannot add or concatenate `{:?}` and `{:?}`.",
-          self, other
-        ))
-      },
+      _ => Err(ObjectError::ObjectsNotAddable(self, other)),
     }
   }
 }
 
 // Implements / operator overload for Monkey objects in Rust.
 impl Div for Object {
-  type Output = Result<Self, String>;
+  type Output = Result<Self, ObjectError>;
 
   fn div(self, other: Self) -> Self::Output {
     match (&self, &other) {
@@ -73,14 +68,14 @@ impl Div for Object {
           value: int_a.value / int_b.value,
         }))
       },
-      _ => Err(format!("Cannot divide `{:?}` by `{:?}`.", self, other)),
+      _ => Err(ObjectError::ObjectsNotDivisable(self, other)),
     }
   }
 }
 
 // Implements * operator overload for Monkey objects in Rust.
 impl Mul for Object {
-  type Output = Result<Self, String>;
+  type Output = Result<Self, ObjectError>;
 
   fn mul(self, other: Self) -> Self::Output {
     match (&self, &other) {
@@ -89,14 +84,14 @@ impl Mul for Object {
           value: int_a.value * int_b.value,
         }))
       },
-      _ => Err(format!("Cannot multiply `{:?}` by `{:?}`.", self, other)),
+      _ => Err(ObjectError::ObjectsNotMultipliable(self, other)),
     }
   }
 }
 
 // Implements - operator overload for Monkey objects in Rust.
 impl Sub for Object {
-  type Output = Result<Self, String>;
+  type Output = Result<Self, ObjectError>;
 
   fn sub(self, other: Self) -> Self::Output {
     match (&self, &other) {
@@ -105,7 +100,7 @@ impl Sub for Object {
           value: int_a.value - int_b.value,
         }))
       },
-      _ => Err(format!("Cannot subtract `{:?}` by `{:?}`.", self, other)),
+      _ => Err(ObjectError::ObjectsNotSubtractable(self, other)),
     }
   }
 }
@@ -283,14 +278,14 @@ impl PartialEq for MonkeyHashKey {
 }
 
 impl TryFrom<Object> for MonkeyHashKey {
-  type Error = String;
+  type Error = ObjectError;
 
   fn try_from(object: Object) -> Result<Self, Self::Error> {
     match object {
       Object::Bool(monkey_bool) => Ok(MonkeyHashKey::Bool(monkey_bool)),
       Object::Integer(monkey_int) => Ok(MonkeyHashKey::Integer(monkey_int)),
       Object::String(monkey_str) => Ok(MonkeyHashKey::String(monkey_str)),
-      other_obj => Err(format!("Cannot use `{}` as a hash key.", other_obj)),
+      other_obj => Err(ObjectError::ObjectNotHashable(other_obj)),
     }
   }
 }
@@ -352,5 +347,38 @@ pub struct MonkeyString {
 impl fmt::Display for MonkeyString {
   fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
     write!(f, "{}", self.value)
+  }
+}
+
+// -- Errors ------------------------------------------------------------------
+
+#[derive(Debug)]
+pub enum ObjectError {
+  ObjectNotHashable(Object),
+  ObjectsNotAddable(Object, Object),
+  ObjectsNotDivisable(Object, Object),
+  ObjectsNotMultipliable(Object, Object),
+  ObjectsNotSubtractable(Object, Object),
+}
+
+impl fmt::Display for ObjectError {
+  fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+    match self {
+      ObjectError::ObjectNotHashable(obj) => {
+        write!(f, "cannot use `{}` as hash key", obj)
+      },
+      ObjectError::ObjectsNotAddable(obj_a, obj_b) => {
+        write!(f, "cannot add or concatenate `{}` and `{}`", obj_a, obj_b)
+      },
+      ObjectError::ObjectsNotDivisable(obj_a, obj_b) => {
+        write!(f, "cannot divide `{}` by `{}`", obj_a, obj_b)
+      },
+      ObjectError::ObjectsNotMultipliable(obj_a, obj_b) => {
+        write!(f, "cannot multiply `{}` by `{}`", obj_a, obj_b)
+      },
+      ObjectError::ObjectsNotSubtractable(obj_a, obj_b) => {
+        write!(f, "cannot subtract `{}` by `{}`", obj_a, obj_b)
+      },
+    }
   }
 }

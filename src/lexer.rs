@@ -5,7 +5,7 @@ use itertools::Itertools;
 
 /// A Token represents and applies meaning to a known character or sequence of
 /// characters from Monkey source code.
-#[derive(Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq)]
 pub enum Token {
   // Delimiters
   Comma,

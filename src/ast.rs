@@ -221,7 +221,7 @@ impl fmt::Debug for InfixExpression {
   fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
     write!(
       f,
-      "{:?} {:?} {:?}",
+      "{:?} {} {:?}",
       self.left_operand, self.operator, self.right_operand
     )
   }
@@ -237,7 +237,7 @@ pub struct PrefixExpression {
 
 impl fmt::Debug for PrefixExpression {
   fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-    write!(f, "{:?} {:?}", self.operator, self.operand)
+    write!(f, "{} {:?}", self.operator, self.operand)
   }
 }
 
