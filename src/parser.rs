@@ -93,8 +93,8 @@ impl Node {
 
 impl Expression {
   fn parse(tokens: &mut TokenIter, op_precedence: OperatorPrecedence) -> ParseResult<Self> {
-    let expr = Expression::parse_left(tokens)?;
-    let expr = Expression::parse_right(tokens, expr, op_precedence)?;
+    let expr = Self::parse_left(tokens)?;
+    let expr = Self::parse_right(tokens, expr, op_precedence)?;
     Ok(expr)
   }
 
@@ -105,7 +105,7 @@ impl Expression {
       Some(Token::Number { .. }) => Ok(NumberLiteral::parse(tokens)?.into()),
       Some(Token::Bang) | Some(Token::Minus) => Ok(PrefixExpression::parse(tokens)?.into()),
       Some(Token::True) | Some(Token::False) => Ok(BooleanExpression::parse(tokens)?.into()),
-      Some(Token::LeftParen) => Ok(Expression::parse_group(tokens)?),
+      Some(Token::LeftParen) => Ok(Self::parse_group(tokens)?),
       Some(Token::Function) => Ok(FunctionLiteral::parse(tokens)?.into()),
       Some(Token::String { .. }) => Ok(StringLiteral::parse(tokens)?.into()),
       Some(Token::LeftBracket) => Ok(ArrayLiteral::parse(tokens)?.into()),
@@ -146,20 +146,20 @@ impl Expression {
       | Token::GreaterThan
       | Token::Slash => {
         let infix_expr = InfixExpression::parse(tokens, left_expr)?;
-        Expression::parse_right(tokens, infix_expr.into(), op_precedence)
+        Self::parse_right(tokens, infix_expr.into(), op_precedence)
       },
       Token::LeftParen => {
         match left_expr {
           Expression::Ident(ident_expr) => {
             let call_expr = CallExpression::parse(tokens, ident_expr)?;
-            Expression::parse_right(tokens, call_expr.into(), op_precedence)
+            Self::parse_right(tokens, call_expr.into(), op_precedence)
           },
           _ => Err(ParseError::InvalidInvocation),
         }
       },
       Token::LeftBracket => {
         let index_expr = IndexExpression::parse(tokens, left_expr)?;
-        Expression::parse_right(tokens, index_expr.into(), op_precedence)
+        Self::parse_right(tokens, index_expr.into(), op_precedence)
       },
       _ => Ok(left_expr),
     }
@@ -170,7 +170,7 @@ impl Expression {
       .next_if_eq(&Token::LeftParen)
       .ok_or(ParseError::InvalidGroupedExpressionOpening)?;
 
-    let expr = Expression::parse(tokens, OperatorPrecedence::Base)?;
+    let expr = Self::parse(tokens, OperatorPrecedence::Base)?;
 
     tokens
       .next_if_eq(&Token::RightParen)
@@ -195,7 +195,7 @@ impl Expression {
           tokens.next();
           continue;
         },
-        _ => list.push(Expression::parse(tokens, OperatorPrecedence::Base)?),
+        _ => list.push(Self::parse(tokens, OperatorPrecedence::Base)?),
       }
     }
 
