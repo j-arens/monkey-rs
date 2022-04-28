@@ -182,28 +182,10 @@ impl IfExpression {
 
 impl IndexExpression {
   fn eval(self, scope: &ShareableScope) -> EvalResult {
-    match self.operand.eval(scope)? {
-      Object::Array(MonkeyArray { items }) => {
-        match self.index.eval(scope)? {
-          Object::Integer(MonkeyInteger { value: index }) => {
-            match items.get(index as usize) {
-              Some(obj) => Ok((obj).clone()),
-              _ => Ok(Object::Null(MonkeyNull)),
-            }
-          },
-          other_obj => Err(EvalError::InvalidArrayIndex(other_obj)),
-        }
-      },
-      Object::Hash(MonkeyHash { map }) => {
-        let hash_key = MonkeyHashKey::try_from(self.index.eval(scope)?)?;
+    let operand_obj = self.operand.eval(scope)?;
+    let index_obj = self.index.eval(scope)?;
 
-        match map.get(&hash_key) {
-          Some(obj) => Ok(obj.clone()),
-          _ => Ok(Object::Null(MonkeyNull)),
-        }
-      },
-      other_obj => Err(EvalError::ObjectNotIndexable(other_obj)),
-    }
+    operand_obj.index(index_obj).map_err(EvalError::from)
   }
 }
 
@@ -409,12 +391,10 @@ impl ReturnStatement {
 
 pub enum EvalError {
   BuiltInError(BuiltInError),
-  InvalidArrayIndex(Object),
   InvalidInfixBang,
   InvalidPrefixOperator(Operator),
   ObjectError(ObjectError),
   ObjectNotCallable(Object),
-  ObjectNotIndexable(Object),
   ObjectNotNegateable(Object),
   UnknownIdent(String),
 }
@@ -437,13 +417,6 @@ impl fmt::Display for EvalError {
       EvalError::BuiltInError(err) => {
         write!(f, "{}", err)
       },
-      EvalError::InvalidArrayIndex(obj) => {
-        write!(
-          f,
-          "`{:?}` cannot be used as an array index, use an integer instead",
-          obj
-        )
-      },
       EvalError::InvalidInfixBang => {
         write!(f, "cannot use `!` as an infix operator")
       },
@@ -455,9 +428,6 @@ impl fmt::Display for EvalError {
       },
       EvalError::ObjectNotCallable(obj) => {
         write!(f, "`{:?}` is not callable, expected a function", obj)
-      },
-      EvalError::ObjectNotIndexable(obj) => {
-        write!(f, "`{:?}` is not indexable, expected an array or hash", obj)
       },
       EvalError::ObjectNotNegateable(obj) => {
         write!(f, "`{:?}` is not negateable, expected an integer", obj)

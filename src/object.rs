@@ -24,6 +24,35 @@ pub enum Object {
 }
 
 impl Object {
+  pub fn index(&self, index: Object) -> Result<Self, ObjectError> {
+    match self {
+      Object::Array(MonkeyArray { items }) => {
+        match index {
+          Object::Integer(monkey_int) => {
+            match items.get(monkey_int.value as usize) {
+              Some(obj) => Ok(obj.clone()),
+              None => Ok(Object::Null(MonkeyNull)),
+            }
+          },
+          other_obj => {
+            Err(ObjectError::InvalidArrayIndex(other_obj))
+          },
+        }
+      },
+      Object::Hash(MonkeyHash { map }) => {
+        let hash_key = MonkeyHashKey::try_from(index)?;
+
+        match map.get(&hash_key) {
+          Some(obj) => Ok(obj.clone()),
+          None => Ok(Object::Null(MonkeyNull)),
+        }
+      },
+      other_obj => {
+        Err(ObjectError::ObjectNotIndexable(other_obj.clone()))
+      },
+    }
+  }
+
   pub fn is_truthy(&self) -> bool {
     match self {
       Object::Bool(monkey_bool) => monkey_bool.value,
@@ -354,7 +383,9 @@ impl fmt::Display for MonkeyString {
 
 #[derive(Debug)]
 pub enum ObjectError {
+  InvalidArrayIndex(Object),
   ObjectNotHashable(Object),
+  ObjectNotIndexable(Object),
   ObjectsNotAddable(Object, Object),
   ObjectsNotDivisable(Object, Object),
   ObjectsNotMultipliable(Object, Object),
@@ -364,8 +395,14 @@ pub enum ObjectError {
 impl fmt::Display for ObjectError {
   fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
     match self {
+      ObjectError::InvalidArrayIndex(obj) => {
+        write!(f, "cannot index array with `{}`", obj)
+      },
       ObjectError::ObjectNotHashable(obj) => {
         write!(f, "cannot use `{}` as hash key", obj)
+      },
+      ObjectError::ObjectNotIndexable(obj) => {
+        write!(f, "cannot index `{}`", obj)
       },
       ObjectError::ObjectsNotAddable(obj_a, obj_b) => {
         write!(f, "cannot add or concatenate `{}` and `{}`", obj_a, obj_b)
