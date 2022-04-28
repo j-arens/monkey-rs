@@ -25,7 +25,7 @@ use crate::ast::{
   Statement,
   StringLiteral,
 };
-use crate::lexer::Token;
+use crate::lexer::{Token, TokenPosition};
 use crate::operator::{Operator, OperatorError, OperatorPrecedence};
 
 /// The result of parsing. Contains the abstract syntax tree and any errors
@@ -325,13 +325,8 @@ impl IndexExpression {
 
 impl InfixExpression {
   fn parse(tokens: &mut TokenIter, left_expr: Expression) -> ParseResult<Self> {
-    let op_token = tokens.next();
-
-    if op_token.is_none() {
-      return Err(ParseError::UnexpectedEndOfTokens);
-    }
-
-    let op_token = op_token.unwrap();
+    let op_token = tokens.next().ok_or(ParseError::UnexpectedEndOfTokens)?;
+    let op_token = TokenPosition::Infix(op_token);
     let operator = Operator::try_from(&op_token)?;
     let op_precedence = OperatorPrecedence::from(&op_token);
     let right_expr = Expression::parse(tokens, op_precedence)?;
@@ -348,13 +343,8 @@ impl InfixExpression {
 
 impl PrefixExpression {
   fn parse(tokens: &mut TokenIter) -> ParseResult<Self> {
-    let op_token = tokens.next();
-
-    if op_token.is_none() {
-      return Err(ParseError::UnexpectedEndOfTokens);
-    }
-
-    let op_token = op_token.unwrap();
+    let op_token = tokens.next().ok_or(ParseError::UnexpectedEndOfTokens)?;
+    let op_token = TokenPosition::Prefix(op_token);
     let operator = Operator::try_from(&op_token)?;
     let expr = Expression::parse(tokens, OperatorPrecedence::Prefix)?;
 

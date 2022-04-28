@@ -2,7 +2,7 @@ use std::cmp;
 use std::convert::TryFrom;
 use std::fmt;
 
-use crate::lexer::Token;
+use crate::lexer::{Token, TokenPosition};
 
 /// All possible infix and prefix operators available in Monkey.
 #[derive(Clone)]
@@ -14,6 +14,7 @@ pub enum Operator {
   GreaterThan,
   LessThan,
   Multiply,
+  Negate,
   NotEqual,
   Subtract,
 }
@@ -29,7 +30,7 @@ impl fmt::Display for Operator {
       Operator::LessThan => "<",
       Operator::Multiply => "*",
       Operator::NotEqual => "!=",
-      Operator::Subtract => "-",
+      Operator::Subtract | Operator::Negate => "-",
     })
   }
 }
@@ -54,7 +55,29 @@ impl TryFrom<&Token> for Operator {
   }
 }
 
-/// All possible precedence "levals" in order from weakest to strongest.
+// Maps `TokenPosition` to an `Operator`.
+impl TryFrom<&TokenPosition> for Operator {
+  type Error = OperatorError;
+
+  fn try_from(pos: &TokenPosition) -> Result<Self, Self::Error> {
+    match pos {
+      TokenPosition::Infix(token) => {
+        match token {
+          Token::Minus => Ok(Operator::Subtract),
+          _ => Operator::try_from(token),
+        }
+      },
+      TokenPosition::Prefix(token) => {
+        match token {
+          Token::Minus => Ok(Operator::Negate),
+          _ => Operator::try_from(token),
+        }
+      },
+    }
+  }
+}
+
+/// All possible precedence "levels" in order from weakest to strongest.
 #[derive(Clone, Copy, PartialEq)]
 pub enum OperatorPrecedence {
   Base, // 0
@@ -78,6 +101,17 @@ impl From<&Token> for OperatorPrecedence {
       Token::LeftParen => OperatorPrecedence::Call,
       Token::LeftBracket => OperatorPrecedence::Index,
       _ => OperatorPrecedence::Base,
+    }
+  }
+}
+
+// Maps `TokenPosition` to an `OperatorPrecedence`.
+impl From<&TokenPosition> for OperatorPrecedence {
+  fn from(pos: &TokenPosition) -> Self {
+    match pos {
+      TokenPosition::Infix(token) | TokenPosition::Prefix(token) => {
+        OperatorPrecedence::from(token)
+      },
     }
   }
 }

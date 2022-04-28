@@ -216,6 +216,7 @@ impl InfixExpression {
         }))
       },
       Operator::Multiply => (left_obj * right_obj).map_err(EvalError::from),
+      Operator::Negate => Err(EvalError::InvalidInfixNegation),
       Operator::NotEqual => {
         Ok(Object::Bool(MonkeyBool {
           value: left_obj != right_obj,
@@ -230,16 +231,17 @@ impl InfixExpression {
 
 impl PrefixExpression {
   fn eval(self, scope: &ShareableScope) -> EvalResult {
-    let right_obj = self.operand.eval(scope)?;
+    let operand = self.operand.eval(scope)?;
 
     match self.operator {
       Operator::Bang => {
         Ok(Object::Bool(MonkeyBool {
-          value: !right_obj.is_truthy(),
+          value: !operand.is_truthy(),
         }))
       },
+      Operator::Negate => (-operand).map_err(EvalError::from),
       Operator::Subtract => {
-        match right_obj {
+        match operand {
           Object::Integer(MonkeyInteger { value }) => {
             Ok(Object::Integer(MonkeyInteger { value: -value }))
           },
@@ -392,6 +394,7 @@ impl ReturnStatement {
 pub enum EvalError {
   BuiltInError(BuiltInError),
   InvalidInfixBang,
+  InvalidInfixNegation,
   InvalidPrefixOperator(Operator),
   ObjectError(ObjectError),
   ObjectNotCallable(Object),
@@ -419,6 +422,9 @@ impl fmt::Display for EvalError {
       },
       EvalError::InvalidInfixBang => {
         write!(f, "cannot use `!` as an infix operator")
+      },
+      EvalError::InvalidInfixNegation => {
+        write!(f, "cannot use `-` (negate) as an infix operator")
       },
       EvalError::InvalidPrefixOperator(operator) => {
         write!(f, "cannot use `{}` as a prefix operator", operator)
@@ -491,7 +497,8 @@ mod tests {
       "2 * (5 + 10)" => "30",
       "3 * 3 * 3 + 10" => "37",
       "3 * (3 * 3) + 10" => "37",
-      "(5 + 10 * 2 + 15 / 3) * 2 + -10" => "50"
+      "(5 + 10 * 2 + 15 / 3) * 2 + -10" => "50",
+      "-5 + 5" => "0"
     }
   }
 

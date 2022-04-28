@@ -45,6 +45,11 @@ pub enum Token {
   Slash,
 }
 
+pub enum TokenPosition {
+  Infix(Token),
+  Prefix(Token),
+}
+
 type InputIter<'a> = Peekable<str::Bytes<'a>>;
 
 /// Performs lexical anaylsis of Monkey source code into tokens.

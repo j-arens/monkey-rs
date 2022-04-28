@@ -3,7 +3,7 @@ use std::collections::HashMap;
 use std::convert::TryFrom;
 use std::fmt;
 use std::hash::{Hash, Hasher};
-use std::ops::{Add, Div, Mul, Sub};
+use std::ops::{Add, Div, Mul, Neg, Sub};
 
 use crate::ast::{BlockStatement, IdentExpression};
 use crate::built_in::BuiltInFunction;
@@ -118,7 +118,25 @@ impl Mul for Object {
   }
 }
 
-// Implements - operator overload for Monkey objects in Rust.
+// Implements - (negate) operator overload for Monkey objects in Rust.
+impl Neg for Object {
+  type Output = Result<Self, ObjectError>;
+
+  fn neg(self) -> Self::Output {
+    match self {
+      Object::Integer(monkey_int) => {
+        Ok(Object::Integer(MonkeyInteger {
+          value: -monkey_int.value,
+        }))
+      },
+      other_obj => {
+        Err(ObjectError::ObjectNotNegateable(other_obj))
+      },
+    }
+  }
+}
+
+// Implements - (subtract) operator overload for Monkey objects in Rust.
 impl Sub for Object {
   type Output = Result<Self, ObjectError>;
 
@@ -389,6 +407,7 @@ pub enum ObjectError {
   ObjectsNotAddable(Object, Object),
   ObjectsNotDivisable(Object, Object),
   ObjectsNotMultipliable(Object, Object),
+  ObjectNotNegateable(Object),
   ObjectsNotSubtractable(Object, Object),
 }
 
@@ -412,6 +431,9 @@ impl fmt::Display for ObjectError {
       },
       ObjectError::ObjectsNotMultipliable(obj_a, obj_b) => {
         write!(f, "cannot multiply `{}` by `{}`", obj_a, obj_b)
+      },
+      ObjectError::ObjectNotNegateable(obj) => {
+        write!(f, "cannot negate `{}`", obj)
       },
       ObjectError::ObjectsNotSubtractable(obj_a, obj_b) => {
         write!(f, "cannot subtract `{}` by `{}`", obj_a, obj_b)
