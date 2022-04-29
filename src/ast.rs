@@ -136,19 +136,36 @@ impl fmt::Debug for BooleanExpression {
 // Call Expression
 
 #[derive(Clone)]
-pub struct CallExpression {
-  pub arguments: Vec<Expression>,
-  pub ident: IdentExpression,
+pub enum CallExpression {
+  // An immediately invoked function, e.g. fn(a, b) { a + b }(2, 2)
+  Immediate {
+    arguments: Vec<Expression>,
+    fn_lit: FunctionLiteral,
+  },
+  // Invocation of a function bound to an ident,
+  // e.g. let foo = fn(a, b) { a + b }; foo(2, 2);
+  Named {
+    arguments: Vec<Expression>,
+    ident: IdentExpression,
+  },
 }
 
 impl fmt::Debug for CallExpression {
   fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+    let (name, arguments) = match self {
+      CallExpression::Immediate { arguments, .. } => {
+        (String::from("[anonymous]"), arguments)
+      },
+      CallExpression::Named { arguments, ident } => {
+        (format!("{:?}", ident), arguments)
+      },
+    };
+
     write!(
       f,
-      "{:?}({})",
-      self.ident,
-      self
-        .arguments
+      "{}({})",
+      name,
+      arguments
         .iter()
         .map(|arg| format!("{:?}", arg))
         .collect::<Vec<_>>()

@@ -18,6 +18,7 @@ use crate::ast::{
   IndexExpression,
   InfixExpression,
   LetStatement,
+  Literal,
   Node,
   NumberLiteral,
   PrefixExpression,
@@ -151,7 +152,11 @@ impl Expression {
       Token::LeftParen => {
         match left_expr {
           Expression::Ident(ident_expr) => {
-            let call_expr = CallExpression::parse(tokens, ident_expr)?;
+            let call_expr = CallExpression::parse_named(tokens, ident_expr)?;
+            Self::parse_right(tokens, call_expr.into(), op_precedence)
+          },
+          Expression::Literal(Literal::Function(fn_lit)) => {
+            let call_expr = CallExpression::parse_immediate(tokens, fn_lit)?;
             Self::parse_right(tokens, call_expr.into(), op_precedence)
           },
           _ => Err(ParseError::InvalidInvocation),
@@ -219,17 +224,29 @@ impl BooleanExpression {
 // Call Expression
 
 impl CallExpression {
-  fn parse(tokens: &mut TokenIter, ident: IdentExpression) -> ParseResult<Self> {
-    tokens
-      .next_if_eq(&Token::LeftParen)
-      .ok_or(ParseError::InvalidCallExpressionOpening)?;
+  fn parse_call(tokens: &mut TokenIter) -> Result<Vec<Expression>, ParseError> {
+    tokens.next_if_eq(&Token::LeftParen).ok_or(ParseError::InvalidCallExpressionOpening)?;
 
     let arguments = Expression::parse_list(tokens, Token::RightParen)?;
 
     // Advance optional semicolon.
     tokens.next_if_eq(&Token::Semicolon);
 
-    Ok(CallExpression { arguments, ident })
+    Ok(arguments)
+  }
+
+  fn parse_immediate(tokens: &mut TokenIter, fn_lit: FunctionLiteral) -> ParseResult<Self> {
+    Ok(CallExpression::Immediate {
+      arguments: Self::parse_call(tokens)?,
+      fn_lit,
+    })
+  }
+
+  fn parse_named(tokens: &mut TokenIter, ident: IdentExpression) -> ParseResult<Self> {
+    Ok(CallExpression::Named {
+      arguments: Self::parse_call(tokens)?,
+      ident,
+    })
   }
 }
 
@@ -1269,6 +1286,19 @@ mod tests {
                 Infix(Expression(Literal(Number(4))) + Expression(Literal(Number(5))))
               )
             )
+          )
+        )
+      "
+    }
+  }
+
+  #[test]
+  fn test_parsing_immediate_call_expression() {
+    parser_test! {
+      "fn(a, b) { a + b }(2, 2)" => "
+        Statement(
+          Expression(
+            Call([anonymous](Literal(Number(2)), Literal(Number(2))))
           )
         )
       "

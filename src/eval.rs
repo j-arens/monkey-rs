@@ -109,12 +109,15 @@ impl BooleanExpression {
 
 impl CallExpression {
   fn eval(self, scope: &ShareableScope) -> EvalResult {
-    let obj = self.ident.eval(scope)?;
+    let (arguments, func_obj) = match self {
+      CallExpression::Immediate { arguments, fn_lit } => (arguments, fn_lit.eval(scope)?),
+      CallExpression::Named { arguments, ident } => (arguments, ident.eval(scope)?),
+    };
 
-    match obj {
+    let arguments = Self::eval_arguments(arguments, scope)?;
+
+    match func_obj {
       Object::BuiltIn(built_in) => {
-        let arguments = CallExpression::eval_arguments(self.arguments, scope)?;
-
         (built_in.value.function)(arguments).map_err(EvalError::from)
       },
       Object::Function(func) => {
@@ -123,8 +126,6 @@ impl CallExpression {
           parameters,
           scope: fn_scope,
         } = func;
-
-        let arguments = CallExpression::eval_arguments(self.arguments, scope)?;
 
         arguments
           .into_iter()
@@ -589,7 +590,9 @@ mod tests {
         };
         
         add(5 + 5, add(5, 5))
-      " => "20"
+      " => "20",
+
+      "fn(a, b) { a + b }(2, 2)" => "4"
     }
   }
 
