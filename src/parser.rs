@@ -225,7 +225,9 @@ impl BooleanExpression {
 
 impl CallExpression {
   fn parse_call(tokens: &mut TokenIter) -> Result<Vec<Expression>, ParseError> {
-    tokens.next_if_eq(&Token::LeftParen).ok_or(ParseError::InvalidCallExpressionOpening)?;
+    tokens
+      .next_if_eq(&Token::LeftParen)
+      .ok_or(ParseError::InvalidCallExpressionOpening)?;
 
     let arguments = Expression::parse_list(tokens, Token::RightParen)?;
 

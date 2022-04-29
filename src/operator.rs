@@ -109,9 +109,7 @@ impl From<&Token> for OperatorPrecedence {
 impl From<&TokenPosition> for OperatorPrecedence {
   fn from(pos: &TokenPosition) -> Self {
     match pos {
-      TokenPosition::Infix(token) | TokenPosition::Prefix(token) => {
-        OperatorPrecedence::from(token)
-      },
+      TokenPosition::Infix(token) | TokenPosition::Prefix(token) => OperatorPrecedence::from(token),
     }
   }
 }

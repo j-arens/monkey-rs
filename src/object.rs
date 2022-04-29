@@ -34,9 +34,7 @@ impl Object {
               None => Ok(Object::Null(MonkeyNull)),
             }
           },
-          other_obj => {
-            Err(ObjectError::InvalidArrayIndex(other_obj))
-          },
+          other_obj => Err(ObjectError::InvalidArrayIndex(other_obj)),
         }
       },
       Object::Hash(MonkeyHash { map }) => {
@@ -47,9 +45,7 @@ impl Object {
           None => Ok(Object::Null(MonkeyNull)),
         }
       },
-      other_obj => {
-        Err(ObjectError::ObjectNotIndexable(other_obj.clone()))
-      },
+      other_obj => Err(ObjectError::ObjectNotIndexable(other_obj.clone())),
     }
   }
 
@@ -129,9 +125,7 @@ impl Neg for Object {
           value: -monkey_int.value,
         }))
       },
-      other_obj => {
-        Err(ObjectError::ObjectNotNegateable(other_obj))
-      },
+      other_obj => Err(ObjectError::ObjectNotNegateable(other_obj)),
     }
   }
 }

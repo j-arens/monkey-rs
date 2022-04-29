@@ -153,12 +153,8 @@ pub enum CallExpression {
 impl fmt::Debug for CallExpression {
   fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
     let (name, arguments) = match self {
-      CallExpression::Immediate { arguments, .. } => {
-        (String::from("[anonymous]"), arguments)
-      },
-      CallExpression::Named { arguments, ident } => {
-        (format!("{:?}", ident), arguments)
-      },
+      CallExpression::Immediate { arguments, .. } => (String::from("[anonymous]"), arguments),
+      CallExpression::Named { arguments, ident } => (format!("{:?}", ident), arguments),
     };
 
     write!(

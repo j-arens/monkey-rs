@@ -117,9 +117,7 @@ impl CallExpression {
     let arguments = Self::eval_arguments(arguments, scope)?;
 
     match func_obj {
-      Object::BuiltIn(built_in) => {
-        (built_in.value.function)(arguments).map_err(EvalError::from)
-      },
+      Object::BuiltIn(built_in) => (built_in.value.function)(arguments).map_err(EvalError::from),
       Object::Function(func) => {
         let MonkeyFunction {
           body,
